@@ -41,9 +41,10 @@ local bodies = {
 -- A routine another addon or plugin hooks has a jump written over its first bytes. Its pattern starts on those
 -- bytes, so it then finds nothing, though the rest of the routine is still there. So the mover has a second pattern:
 -- the 48 bytes of it from 17 on, past anything a hook writes. That one is looked for only when the mover's own
--- pattern finds nothing, and only to say why.
+-- pattern finds nothing. When the mover starts with a jump, Vantage calls it through the hook, which runs the mover.
 local LATER = { menu_move = 'menu_move_later' };
-patterns.menu_move_later = bodies.menu_move:sub(17 * 2 + 1, (17 + 48) * 2);
+local LATER_FROM, JUMP = 17, 0xE9;
+patterns.menu_move_later = bodies.menu_move:sub(LATER_FROM * 2 + 1, (LATER_FROM + 48) * 2);
 local ORDER = { 'icon_paint', 'timer_paint', 'icon_draw', 'timer_draw', 'menu_move', 'rebuild', 'registry' };
 local LABELS = { icon_paint = 'buff icon painting', timer_paint = 'buff timer painting', icon_draw = 'icon drawing',
     timer_draw = 'timer drawing', menu_move = 'menu mover', rebuild = 'buff list rebuild', registry = 'menu registry' };
@@ -171,20 +172,25 @@ local function look()
         return false;
     end
     local ok, result, why = pcall(function()
-        local at = {};
+        local at, hooked = {}, {};
         for _, name in ipairs(ORDER) do
             local where, reason = platform.find(name);
             if not where then
                 reason = reason or 'is missing';
-                if LATER[name] and reason == 'is missing' and platform.find(LATER[name]) then
+                local later = LATER[name] and reason == 'is missing' and platform.find(LATER[name]);
+                if later and read8(later - LATER_FROM) == JUMP then
+                    where, hooked[name] = later - LATER_FROM, true;
+                elseif later then
                     return nil, ('Something else in the game, such as another addon or plugin, has changed this game client\'s %s, so the game\'s buff icons stay as they are.'):format(LABELS[name]);
+                else
+                    return nil, ('This game client\'s %s %s, so the game\'s buff icons stay as they are.'):format(LABELS[name], reason);
                 end
-                return nil, ('This game client\'s %s %s, so the game\'s buff icons stay as they are.'):format(LABELS[name], reason);
             end
             at[name] = where;
         end
         for _, name in ipairs(ORDER) do
-            if bodies[name] and not matches(at[name], bodies[name]) then
+            local from = hooked[name] and LATER_FROM or 0;
+            if bodies[name] and not matches(at[name] + from, bodies[name]:sub(from * 2 + 1)) then
                 return nil, ('This game client\'s %s is not the code Vantage knows, so the game\'s buff icons stay as they are.'):format(LABELS[name]);
             end
         end

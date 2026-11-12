@@ -352,6 +352,23 @@ local CHANGED = 'Something else in the game, such as another addon or plugin, ha
 local MISSING = 'This game client\'s menu mover is missing, so the game\'s buff icons stay as they are.';
 refused('a mover whose start something else changed', function() missing.menu_move = 'is missing'; end, CHANGED);
 assert(finds == 6, 'The later bytes are looked for once the mover isn\'t found, and nothing after it: ' .. finds);
+-- A hook's jump over the mover's start, as HeadsUp writes one (a jump and three nops over its first eight bytes):
+-- Vantage calls the mover through the hook, at its start, and checks the rest of it.
+fresh();
+missing.menu_move = 'is missing';
+put(where.menu_move, '\233\0\0\0\0\144\144\144');
+pick, notice = on();
+assert(notice == nil and game_buffs.status().on and sits(OFF, OFF) and calls.moves[#calls.moves].routine == where.menu_move,
+    'A hooked mover is called through its hook: ' .. tostring(notice));
+off();
+fresh();
+missing.menu_move = 'is missing';
+put(where.menu_move, '\233\0\0\0\0\144\144\144');
+put(where.menu_move + 0xE0, '\204');
+local _, hooked_other = on();
+assert(hooked_other == 'This game client\'s menu mover is not the code Vantage knows, so the game\'s buff icons stay as they are.'
+    and #calls.writes == 0, 'A hooked mover whose later bytes differ is still refused: ' .. tostring(hooked_other));
+off();
 refused('a routine that is missing', function() missing.menu_move, missing.menu_move_later = 'is missing', 'is missing'; end, MISSING);
 refused('a mover missing whose later bytes are there twice',
     function() missing.menu_move, missing.menu_move_later = 'is missing', 'matches more than once'; end, MISSING);
